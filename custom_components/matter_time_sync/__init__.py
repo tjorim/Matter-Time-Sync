@@ -58,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_id = call.data.get("device_id")
         node_id = call.data.get("node_id")
         endpoint = call.data["endpoint"]
-        
+
         # Extract node_id from device if device_id is provided
         if device_id and not node_id:
             device_registry = dr.async_get(hass)
@@ -72,26 +72,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Matter devices have identifiers like ('matter', 'fabric_id-node_id')
             node_id = None
             for identifier in device.identifiers:
+                # Safely check if this is a Matter identifier
+                if not isinstance(identifier, (tuple, list)) or len(identifier) < 2:
+                    continue
+
                 if identifier[0] == "matter":
                     _LOGGER.debug("Found Matter identifier: %s", identifier)
-                    # Format is typically ('matter', 'fabric_id-node_id')
-                    if len(identifier) < 2:
-                        _LOGGER.warning("Matter identifier has unexpected format: %s", identifier)
-                        continue
-                    
                     identifier_value = identifier[1]
                     parts = identifier_value.split("-")
-                    
+
                     if len(parts) < 2:
                         _LOGGER.warning(
                             "Matter identifier value does not contain expected format 'fabric_id-node_id': %s",
                             identifier_value
                         )
                         continue
-                    
+
                     try:
-                        # Take the last part as node_id
-                        node_id = int(parts[-1])
+                        # Extract and validate the last part as node_id
+                        potential_node_id = int(parts[-1])
+                        # Validate it's a reasonable node_id (positive integer, typical range 1-65535)
+                        if potential_node_id <= 0 or potential_node_id > 65535:
+                            _LOGGER.warning(
+                                "Extracted node_id %s is outside valid range (1-65535) from identifier: %s",
+                                potential_node_id,
+                                identifier_value
+                            )
+                            continue
+                        node_id = potential_node_id
                         _LOGGER.debug("Successfully extracted node_id %s from identifier %s", node_id, identifier_value)
                         break
                     except ValueError:
@@ -106,13 +114,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 raise ValueError(f"Could not extract Matter node_id from device {device_id}")
             
             _LOGGER.info("Extracted node_id %s from device %s", node_id, device_id)
-        
+
         # If we reach here and still don't have node_id, it's a validation error
         # (schema should have caught this, but double-check for safety)
         if not node_id:
             _LOGGER.error("No valid node_id could be determined")
             raise ValueError("Either device_id with valid Matter device or node_id must be provided")
-        
+
         # Read from config data, fallback to Home Assistant config
         ws_address = entry.data.get("websocket_address", "ws://core-matter-server:5580/ws")
         tz_name = entry.data.get("timezone", hass.config.time_zone)
