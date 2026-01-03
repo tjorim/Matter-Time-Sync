@@ -8,8 +8,7 @@ DOMAIN = "matter_time_sync"
 _LOGGER = logging.getLogger(__name__)
 
 # Defaults
-DEFAULT_WEBSOCKET = "ws://localhost:5580/ws"
-DEFAULT_TIMEZONE = "Europe/Paris"
+DEFAULT_WEBSOCKET = "ws://core-matter-server:5580/ws"
 
 class MatterTimeSyncConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Matter Time Sync."""
@@ -21,9 +20,12 @@ class MatterTimeSyncConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self.async_create_entry(title="Matter Time Sync", data=user_input)
 
+        # Use Home Assistant's configured timezone as default
+        default_timezone = self.hass.config.time_zone
+
         data_schema = vol.Schema({
             vol.Required("websocket_address", default=DEFAULT_WEBSOCKET): str,
-            vol.Required("timezone", default=DEFAULT_TIMEZONE): str,
+            vol.Required("timezone", default=default_timezone): str,
         })
 
         return self.async_show_form(step_id="user", data_schema=data_schema)

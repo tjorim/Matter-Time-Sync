@@ -45,9 +45,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         node_id = call.data["node_id"]
         endpoint = call.data["endpoint"]
         
-        # Read strictly from initial config data
-        ws_address = entry.data.get("websocket_address")
-        tz_name = entry.data.get("timezone")
+        # Read from config data, fallback to Home Assistant config
+        ws_address = entry.data.get("websocket_address", "ws://core-matter-server:5580/ws")
+        tz_name = entry.data.get("timezone", hass.config.time_zone)
 
         _LOGGER.info("Starting sync for node %s (ep %s)", node_id, endpoint)
         
