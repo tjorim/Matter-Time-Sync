@@ -69,7 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 raise ValueError(f"Device {device_id} not found")
             
             # Extract Matter node_id from device identifiers
-            # Matter devices have identifiers like ('matter', 'fabric_id-node_id')
+            # Matter devices can have identifiers in different formats:
+            # - ('matter', 'deviceid_<fabric_id>-<node_id>-MatterNodeDevice')
+            # - ('matter', '<fabric_id>-<node_id>')
             node_id = None
             for identifier in device.identifiers:
                 # Safely check if this is a Matter identifier
@@ -83,29 +85,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     if len(parts) < 2:
                         _LOGGER.warning(
-                            "Matter identifier value does not contain expected format 'fabric_id-node_id': %s",
+                            "Matter identifier value does not contain expected format: %s",
                             identifier_value
                         )
                         continue
 
                     try:
-                        # Extract and validate the last part as node_id
-                        potential_node_id = int(parts[-1])
-                        # Validate it's a reasonable node_id (positive integer, typical range 1-65535)
-                        if potential_node_id <= 0 or potential_node_id > 65535:
+                        # Try to extract node_id from different positions in the split parts
+                        # Format 1: deviceid_<fabric_id>-<node_id>-MatterNodeDevice (parts[1] is node_id)
+                        # Format 2: <fabric_id>-<node_id> (parts[-1] is node_id)
+                        potential_node_id = None
+                        
+                        # Try parsing parts from the second element onwards (skip first as it may be deviceid_xxx)
+                        for i in range(1, len(parts)):
+                            try:
+                                potential_node_id = int(parts[i])
+                                # Validate it's a reasonable node_id (positive integer, typical range 1-65535)
+                                if 1 <= potential_node_id <= 65535:
+                                    node_id = potential_node_id
+                                    _LOGGER.debug(
+                                        "Successfully extracted node_id %s from identifier %s (part %d)",
+                                        node_id, identifier_value, i
+                                    )
+                                    break
+                            except ValueError:
+                                # This part is not a valid integer, try next
+                                continue
+                        
+                        if node_id:
+                            break
+                        else:
                             _LOGGER.warning(
-                                "Extracted node_id %s is outside valid range (1-65535) from identifier: %s",
-                                potential_node_id,
+                                "Could not find valid node_id in Matter identifier: %s",
                                 identifier_value
                             )
-                            continue
-                        node_id = potential_node_id
-                        _LOGGER.debug("Successfully extracted node_id %s from identifier %s", node_id, identifier_value)
-                        break
-                    except ValueError:
+                    except Exception as e:
                         _LOGGER.warning(
-                            "Could not parse node_id from Matter identifier: %s",
-                            identifier_value
+                            "Error parsing Matter identifier %s: %s",
+                            identifier_value, e
                         )
                         continue
             
