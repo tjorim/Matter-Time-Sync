@@ -27,11 +27,22 @@ CMD_ID_SET_DST_OFFSET = 0x03
 MATTER_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 MICROSECONDS_PER_SECOND = 1_000_000
 
-SYNC_TIME_SCHEMA = vol.Schema({
-    vol.Optional("device_id"): cv.string,
-    vol.Optional("node_id"): cv.positive_int,
-    vol.Optional("endpoint", default=0): cv.positive_int,
-})
+def validate_sync_time_data(data):
+    """Validate that either device_id or node_id is provided."""
+    if not data.get("device_id") and not data.get("node_id"):
+        raise vol.Invalid("Either device_id or node_id must be provided")
+    return data
+
+SYNC_TIME_SCHEMA = vol.Schema(
+    vol.All(
+        {
+            vol.Optional("device_id"): cv.string,
+            vol.Optional("node_id"): cv.positive_int,
+            vol.Optional("endpoint", default=0): cv.positive_int,
+        },
+        validate_sync_time_data,
+    )
+)
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the component via YAML (stub)."""
@@ -62,23 +73,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             node_id = None
             for identifier in device.identifiers:
                 if identifier[0] == "matter":
+                    _LOGGER.debug("Found Matter identifier: %s", identifier)
                     # Format is typically ('matter', 'fabric_id-node_id')
-                    parts = identifier[1].split("-")
-                    if len(parts) >= 2:
-                        try:
-                            node_id = int(parts[-1])
-                            break
-                        except ValueError:
-                            continue
+                    if len(identifier) < 2:
+                        _LOGGER.warning("Matter identifier has unexpected format: %s", identifier)
+                        continue
+                    
+                    identifier_value = identifier[1]
+                    parts = identifier_value.split("-")
+                    
+                    if len(parts) < 2:
+                        _LOGGER.warning(
+                            "Matter identifier value does not contain expected format 'fabric_id-node_id': %s",
+                            identifier_value
+                        )
+                        continue
+                    
+                    try:
+                        # Take the last part as node_id
+                        node_id = int(parts[-1])
+                        _LOGGER.debug("Successfully extracted node_id %s from identifier %s", node_id, identifier_value)
+                        break
+                    except ValueError:
+                        _LOGGER.warning(
+                            "Could not parse node_id from Matter identifier: %s",
+                            identifier_value
+                        )
+                        continue
             
             if not node_id:
                 _LOGGER.error("Could not extract Matter node_id from device %s", device_id)
                 raise ValueError(f"Could not extract Matter node_id from device {device_id}")
             
             _LOGGER.info("Extracted node_id %s from device %s", node_id, device_id)
-        elif not node_id:
-            _LOGGER.error("Either device_id or node_id must be provided")
-            raise ValueError("Either device_id or node_id must be provided")
+        
+        # If we reach here and still don't have node_id, it's a validation error
+        # (schema should have caught this, but double-check for safety)
+        if not node_id:
+            _LOGGER.error("No valid node_id could be determined")
+            raise ValueError("Either device_id with valid Matter device or node_id must be provided")
         
         # Read from config data, fallback to Home Assistant config
         ws_address = entry.data.get("websocket_address", "ws://core-matter-server:5580/ws")
