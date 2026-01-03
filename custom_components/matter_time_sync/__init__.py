@@ -27,22 +27,11 @@ CMD_ID_SET_DST_OFFSET = 0x03
 MATTER_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 MICROSECONDS_PER_SECOND = 1_000_000
 
-def validate_sync_time_data(data):
-    """Validate that either device_id or node_id is provided."""
-    if not data.get("device_id") and not data.get("node_id"):
-        raise vol.Invalid("Either device_id or node_id must be provided")
-    return data
-
-SYNC_TIME_SCHEMA = vol.Schema(
-    vol.All(
-        {
-            vol.Optional("device_id"): cv.string,
-            vol.Optional("node_id"): cv.positive_int,
-            vol.Optional("endpoint", default=0): cv.positive_int,
-        },
-        validate_sync_time_data,
-    )
-)
+SYNC_TIME_SCHEMA = vol.Schema({
+    vol.Optional("node_id"): cv.positive_int,
+    vol.Optional("device_id"): cv.string,
+    vol.Optional("endpoint", default=0): cv.positive_int,
+})
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the component via YAML (stub)."""
