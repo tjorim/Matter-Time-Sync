@@ -94,15 +94,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         # Try to extract node_id from different positions in the split parts
                         # Format 1: deviceid_<fabric_id>-<node_id>-MatterNodeDevice (parts[1] is node_id)
                         # Format 2: <fabric_id>-<node_id> (parts[-1] is node_id)
-                        potential_node_id = None
                         
                         # Try parsing parts from the second element onwards (skip first as it may be deviceid_xxx)
+                        # We look for the first integer in range 1-65535, which is the valid node_id range
                         for i in range(1, len(parts)):
                             try:
-                                potential_node_id = int(parts[i])
+                                parsed_value = int(parts[i])
                                 # Validate it's a reasonable node_id (positive integer, typical range 1-65535)
-                                if 1 <= potential_node_id <= 65535:
-                                    node_id = potential_node_id
+                                # This filters out fabric IDs which are typically hex or very large numbers
+                                if 1 <= parsed_value <= 65535:
+                                    node_id = parsed_value
                                     _LOGGER.debug(
                                         "Successfully extracted node_id %s from identifier %s (part %d)",
                                         node_id, identifier_value, i
