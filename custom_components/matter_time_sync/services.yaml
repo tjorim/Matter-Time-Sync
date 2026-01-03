@@ -2,10 +2,18 @@ sync_time:
   name: Sync time
   description: Synchronize time and timezone on a Matter device using the global integration settings.
   fields:
+    device_id:
+      name: Device
+      description: Matter device (either device or node_id must be provided)
+      required: false
+      example: "abc123"
+      selector:
+        device:
+          integration: matter
     node_id:
       name: Node ID
-      description: Matter device node ID
-      required: true
+      description: Matter device node ID (either device or node_id must be provided)
+      required: false
       example: 7
       selector:
         number:

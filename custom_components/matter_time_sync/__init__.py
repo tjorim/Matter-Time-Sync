@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ MATTER_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 MICROSECONDS_PER_SECOND = 1_000_000
 
 SYNC_TIME_SCHEMA = vol.Schema({
-    vol.Required("node_id"): cv.positive_int,
+    vol.Optional("device_id"): cv.string,
+    vol.Optional("node_id"): cv.positive_int,
     vol.Optional("endpoint", default=0): cv.positive_int,
 })
 
@@ -42,8 +44,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_sync_time(call: ServiceCall) -> None:
         """Handle the sync_time service call."""
-        node_id = call.data["node_id"]
+        device_id = call.data.get("device_id")
+        node_id = call.data.get("node_id")
         endpoint = call.data["endpoint"]
+        
+        # Extract node_id from device if device_id is provided
+        if device_id and not node_id:
+            device_registry = dr.async_get(hass)
+            device = device_registry.async_get(device_id)
+            
+            if not device:
+                _LOGGER.error("Device %s not found", device_id)
+                raise ValueError(f"Device {device_id} not found")
+            
+            # Extract Matter node_id from device identifiers
+            # Matter devices have identifiers like ('matter', 'fabric_id-node_id')
+            node_id = None
+            for identifier in device.identifiers:
+                if identifier[0] == "matter":
+                    # Format is typically ('matter', 'fabric_id-node_id')
+                    parts = identifier[1].split("-")
+                    if len(parts) >= 2:
+                        try:
+                            node_id = int(parts[-1])
+                            break
+                        except ValueError:
+                            continue
+            
+            if not node_id:
+                _LOGGER.error("Could not extract Matter node_id from device %s", device_id)
+                raise ValueError(f"Could not extract Matter node_id from device {device_id}")
+            
+            _LOGGER.info("Extracted node_id %s from device %s", node_id, device_id)
+        elif not node_id:
+            _LOGGER.error("Either device_id or node_id must be provided")
+            raise ValueError("Either device_id or node_id must be provided")
         
         # Read from config data, fallback to Home Assistant config
         ws_address = entry.data.get("websocket_address", "ws://core-matter-server:5580/ws")
