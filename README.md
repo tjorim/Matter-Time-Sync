@@ -47,7 +47,7 @@ This component communicates directly with the Matter Server Add-on (or standalon
 3.  Search for **Matter Time Sync**.
 4.  Enter your configuration details:
     *   **WebSocket Address**: The address of your Matter Server.
-        *   *Default*: `ws://localhost:5580/ws` (Replace `localhost` with the IP of your HA instance, e.g., `ws://192.168.1.2:5580/ws`).
+        *   *Default*: `ws://core-matter-server:5580/ws` (Replace `core-matter-server` with the IP of your Matter server if not running as an add-on).
     *   **Timezone**: Your IANA timezone (e.g., `Europe/Paris`, `America/New_York`).
 5.  Click **Submit**.
 
