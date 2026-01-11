@@ -104,9 +104,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     for i in range(1, len(parts)):
                         try:
                             parsed_value = int(parts[i])
-                            # Validate it's a valid node_id (positive 64-bit unsigned integer)
+                            # Validate it's a valid node_id (64-bit unsigned integer)
                             # This filters out negative values and values that are too large
-                            if parsed_value >= 1 and parsed_value <= 0xFFFFFFFFFFFFFFFF:
+                            if 0 <= parsed_value <= 0xFFFFFFFFFFFFFFFF:
                                 extracted_node_id = parsed_value
                                 _LOGGER.debug(
                                     "Successfully extracted node_id %s from identifier %s (part %d)",
