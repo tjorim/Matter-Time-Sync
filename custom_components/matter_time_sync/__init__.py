@@ -27,11 +27,27 @@ CMD_ID_SET_DST_OFFSET = 0x03
 MATTER_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 MICROSECONDS_PER_SECOND = 1_000_000
 
-SYNC_TIME_SCHEMA = vol.Schema({
-    vol.Optional("node_id"): cv.positive_int,
-    vol.Optional("device_id"): cv.string,
-    vol.Optional("endpoint", default=0): cv.positive_int,
-})
+def validate_sync_time_data(data):
+    """Validate that either device_id or node_id is provided, but not both."""
+    has_device_id = data.get("device_id") is not None
+    has_node_id = data.get("node_id") is not None
+    
+    if not has_device_id and not has_node_id:
+        raise vol.Invalid("Either device_id or node_id must be provided")
+    if has_device_id and has_node_id:
+        raise vol.Invalid("Provide either device_id or node_id, but not both")
+    return data
+
+SYNC_TIME_SCHEMA = vol.Schema(
+    vol.All(
+        {
+            vol.Optional("node_id"): cv.positive_int,
+            vol.Optional("device_id"): cv.string,
+            vol.Optional("endpoint", default=0): cv.positive_int,
+        },
+        validate_sync_time_data,
+    )
+)
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the component via YAML (stub)."""
@@ -61,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Matter devices can have identifiers in different formats:
             # - ('matter', 'deviceid_<fabric_id>-<node_id>-MatterNodeDevice')
             # - ('matter', '<fabric_id>-<node_id>')
-            node_id = None
+            extracted_node_id = None
             for identifier in device.identifiers:
                 # Safely check if this is a Matter identifier
                 if not isinstance(identifier, (tuple, list)) or len(identifier) < 2:
@@ -79,54 +95,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         )
                         continue
 
-                    try:
-                        # Try to extract node_id from different positions in the split parts
-                        # Format 1: deviceid_<fabric_id>-<node_id>-MatterNodeDevice (parts[1] is node_id)
-                        # Format 2: <fabric_id>-<node_id> (parts[-1] is node_id)
-                        
-                        # Try parsing parts from the second element onwards (skip first as it may be deviceid_xxx)
-                        # We look for the first integer in range 1-65535, which is the valid node_id range
-                        for i in range(1, len(parts)):
-                            try:
-                                parsed_value = int(parts[i])
-                                # Validate it's a reasonable node_id (positive integer, typical range 1-65535)
-                                # This filters out fabric IDs which are typically hex or very large numbers
-                                if 1 <= parsed_value <= 65535:
-                                    node_id = parsed_value
-                                    _LOGGER.debug(
-                                        "Successfully extracted node_id %s from identifier %s (part %d)",
-                                        node_id, identifier_value, i
-                                    )
-                                    break
-                            except ValueError:
-                                # This part is not a valid integer, try next
-                                continue
-                        
-                        if node_id:
-                            break
-                        else:
-                            _LOGGER.warning(
-                                "Could not find valid node_id in Matter identifier: %s",
-                                identifier_value
-                            )
-                    except Exception as e:
+                    # Try to extract node_id from different positions in the split parts
+                    # Format 1: deviceid_<fabric_id>-<node_id>-MatterNodeDevice (parts[1] is node_id)
+                    # Format 2: <fabric_id>-<node_id> (parts[-1] is node_id)
+                    
+                    # Try parsing parts from the second element onwards (skip first as it may be deviceid_xxx)
+                    # Matter node IDs are 64-bit unsigned integers (0 to 2^64-1)
+                    for i in range(1, len(parts)):
+                        try:
+                            parsed_value = int(parts[i])
+                            # Validate it's a valid node_id (positive 64-bit unsigned integer)
+                            # This filters out negative values and values that are too large
+                            if parsed_value >= 1 and parsed_value <= 0xFFFFFFFFFFFFFFFF:
+                                extracted_node_id = parsed_value
+                                _LOGGER.debug(
+                                    "Successfully extracted node_id %s from identifier %s (part %d)",
+                                    extracted_node_id, identifier_value, i
+                                )
+                                break
+                        except (ValueError, OverflowError):
+                            # This part is not a valid integer or too large, try next
+                            continue
+                    
+                    if extracted_node_id:
+                        break
+                    else:
                         _LOGGER.warning(
-                            "Error parsing Matter identifier %s: %s",
-                            identifier_value, e
+                            "Could not find valid node_id in Matter identifier: %s",
+                            identifier_value
                         )
-                        continue
             
-            if not node_id:
+            if not extracted_node_id:
                 _LOGGER.error("Could not extract Matter node_id from device %s", device_id)
                 raise ValueError(f"Could not extract Matter node_id from device {device_id}")
             
+            node_id = extracted_node_id
             _LOGGER.info("Extracted node_id %s from device %s", node_id, device_id)
 
-        # If we reach here and still don't have node_id, it's a validation error
-        # (schema should have caught this, but double-check for safety)
-        if not node_id:
-            _LOGGER.error("No valid node_id could be determined")
-            raise ValueError("Either device_id with valid Matter device or node_id must be provided")
+        # No need for additional validation here - schema validation ensures
+        # exactly one of device_id or node_id is provided
 
         # Read from config data, fallback to Home Assistant config
         ws_address = entry.data.get("websocket_address", "ws://core-matter-server:5580/ws")
@@ -277,6 +284,8 @@ class MatterTimeSyncAsync:
                         break
                     trans_current += timedelta(hours=1)
             
+            # Update prev_off to track the current day's offset for next iteration
+            prev_off = curr_off
             current += timedelta(days=1)
         
         return dst_start, dst_end
