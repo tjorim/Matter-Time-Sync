@@ -4,14 +4,23 @@ sync_time:
   fields:
     node_id:
       name: Node ID
-      description: Matter device node ID
-      required: true
+      description: Matter device node ID (required if device is not selected)
+      required: false
       example: 7
       selector:
         number:
           min: 1
           max: 65535
           mode: box
+    device_id:
+      name: Device
+      description: Select Matter device (use this instead of manually entering node_id)
+      required: false
+      advanced: true
+      example: "abc123"
+      selector:
+        device:
+          integration: matter
     endpoint:
       name: Endpoint
       description: Matter device endpoint ID
